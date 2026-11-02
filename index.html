@@ -1,0 +1,966 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>법인카드 집근처 사용 분석</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="sample-data.js"></script>
+<style>
+:root {
+  --page: #f9f9f7; --surface: #fcfcfb; --surface-2: #f0efec; --border: #e2e1dc;
+  --ink: #0b0b0b; --ink-2: #52514e; --ink-3: #8a8984;
+  --accent: #2a78d6; --accent-ink: #fff;
+  --near: #d03b3b; --far: #8a8984; --home: #2a78d6; --bar: #2a78d6;
+  --warn: #fab219; --serious: #ec835a; --good: #0ca30c;
+  --chip-bg: #fbe9e9; --chip-ink: #9b2020;
+  --shadow: 0 1px 2px rgba(0,0,0,.06), 0 2px 8px rgba(0,0,0,.04);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --page: #0d0d0d; --surface: #1a1a19; --surface-2: #262624; --border: #383835;
+    --ink: #f0efec; --ink-2: #c3c2b7; --ink-3: #8f8e86;
+    --accent: #3987e5; --bar: #3987e5; --home: #3987e5;
+    --chip-bg: #3a1c1c; --chip-ink: #f3b0b0; --shadow: none;
+  }
+}
+:root[data-theme="dark"] {
+  --page: #0d0d0d; --surface: #1a1a19; --surface-2: #262624; --border: #383835;
+  --ink: #f0efec; --ink-2: #c3c2b7; --ink-3: #8f8e86;
+  --accent: #3987e5; --bar: #3987e5; --home: #3987e5;
+  --chip-bg: #3a1c1c; --chip-ink: #f3b0b0; --shadow: none;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.5 "Noto Sans KR", system-ui, sans-serif; }
+header { display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--border); background: var(--surface); flex-wrap: wrap; }
+header h1 { font-size: 17px; margin: 0; font-weight: 700; }
+header .sub { color: var(--ink-2); font-size: 13px; }
+header .spacer { flex: 1; }
+.layout { display: grid; grid-template-columns: 320px 1fr; gap: 16px; padding: 16px 20px; max-width: 1600px; margin: 0 auto; }
+@media (max-width: 960px) { .layout { grid-template-columns: 1fr; padding: 12px 16px; } }
+.panel { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; box-shadow: var(--shadow); }
+.side { display: flex; flex-direction: column; gap: 16px; align-self: start; }
+.side h2, .card h2 { font-size: 14px; margin: 0 0 10px; font-weight: 700; }
+label.f { display: block; font-size: 12px; color: var(--ink-2); margin: 10px 0 4px; }
+input[type=text], input[type=date], select { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--page); color: var(--ink); font: inherit; }
+.row { display: flex; gap: 6px; }
+.row > * { flex: 1; }
+button { font: inherit; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface-2); color: var(--ink); cursor: pointer; white-space: nowrap; }
+button:hover { border-color: var(--ink-3); }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 500; }
+button.primary:disabled { opacity: .5; cursor: default; }
+button.on { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.seg { display: flex; flex-wrap: wrap; gap: 4px; }
+.seg button { flex: 1; padding: 6px 4px; font-size: 13px; }
+.checks { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 13px; }
+.hint { font-size: 12px; color: var(--ink-3); margin-top: 6px; }
+.status { font-size: 12px; color: var(--ink-2); margin-top: 8px; min-height: 18px; }
+.progress { height: 4px; background: var(--surface-2); border-radius: 2px; overflow: hidden; margin-top: 8px; display: none; }
+.progress > div { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+.main { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+@media (max-width: 1200px) { .kpis { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 560px) { .kpis { grid-template-columns: repeat(2, 1fr); } }
+.kpi { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+.kpi .k { font-size: 12px; color: var(--ink-2); }
+.kpi .v { font-size: 22px; font-weight: 700; margin-top: 2px; font-variant-numeric: tabular-nums; }
+.kpi .s { font-size: 12px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; box-shadow: var(--shadow); min-width: 0; }
+.maprow { display: grid; grid-template-columns: 1fr 340px; gap: 16px; }
+@media (max-width: 1200px) { .maprow { grid-template-columns: 1fr; } }
+#map { width: 100%; height: 520px; border-radius: 8px; background: var(--surface-2); position: relative; }
+#mapEmpty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; color: var(--ink-2); padding: 24px; }
+.legend { display: flex; gap: 14px; font-size: 12px; color: var(--ink-2); margin-top: 8px; flex-wrap: wrap; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
+.rank { list-style: none; margin: 0; padding: 0; max-height: 520px; overflow: auto; }
+.rank li { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; padding: 9px 4px; border-bottom: 1px solid var(--border); cursor: pointer; }
+.rank li:hover { background: var(--surface-2); }
+.rank .n { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rank .a { font-variant-numeric: tabular-nums; font-weight: 500; text-align: right; }
+.rank .m { font-size: 12px; color: var(--ink-3); grid-column: 1 / -1; }
+.empty { color: var(--ink-3); font-size: 13px; padding: 12px 0; }
+/* chart */
+.chart { position: relative; height: 200px; display: flex; align-items: flex-end; gap: 2px; padding: 8px 0 0 0; border-bottom: 1px solid var(--border); }
+.chart .col { flex: 1; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; position: relative; cursor: default; }
+.chart .bar { width: 70%; max-width: 36px; background: var(--bar); border-radius: 4px 4px 0 0; min-height: 0; }
+.chart .col:hover .bar { filter: brightness(1.15); }
+.chart .col:hover { background: var(--surface-2); }
+.xlabels { display: flex; gap: 2px; font-size: 11px; color: var(--ink-3); margin-top: 4px; }
+.xlabels span { flex: 1; text-align: center; overflow: hidden; white-space: nowrap; }
+.tip { position: fixed; pointer-events: none; background: var(--ink); color: var(--surface); padding: 6px 9px; border-radius: 6px; font-size: 12px; display: none; z-index: 100; white-space: nowrap; }
+/* table */
+.tabs { display: flex; gap: 4px; margin-bottom: 10px; flex-wrap: wrap; align-items: center; }
+.tabs .spacer { flex: 1; }
+.tablewrap { overflow: auto; max-height: 520px; border: 1px solid var(--border); border-radius: 8px; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { padding: 8px 10px; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
+th { position: sticky; top: 0; background: var(--surface-2); font-weight: 500; color: var(--ink-2); font-size: 12px; z-index: 1; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+tr.near td:first-child { box-shadow: inset 3px 0 0 var(--near); }
+tbody tr:hover { background: var(--surface-2); cursor: pointer; }
+.chip { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 10px; background: var(--chip-bg); color: var(--chip-ink); margin-right: 3px; }
+.chip.g { background: var(--surface-2); color: var(--ink-2); }
+/* map overlays */
+.mk { border-radius: 50%; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.35); color: #fff; font: 700 11px/1 "Noto Sans KR", sans-serif; display: flex; align-items: center; justify-content: center; cursor: pointer; transform: translate(-50%, -50%); }
+.mk.home { background: #2a78d6; width: 34px; height: 34px; font-size: 16px; }
+.iw { background: #fff; color: #0b0b0b; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,.25); padding: 10px 12px; font: 12px/1.5 "Noto Sans KR", sans-serif; min-width: 220px; max-width: 320px; transform: translate(-50%, calc(-100% - 22px)); position: relative; }
+.iw b { font-size: 13px; }
+.iw .x { position: absolute; top: 4px; right: 8px; cursor: pointer; color: #888; font-size: 14px; }
+.iw table { font-size: 11px; margin-top: 6px; }
+.iw td { padding: 3px 4px; border-bottom: 1px solid #eee; }
+dialog { border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--ink); padding: 20px; max-width: 520px; width: calc(100% - 32px); }
+dialog::backdrop { background: rgba(0,0,0,.4); }
+dialog ol { padding-left: 18px; color: var(--ink-2); font-size: 13px; }
+code { background: var(--surface-2); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+/* 이상징후 / 보고서 */
+.cardhead { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
+.cardhead h2 { margin: 0; }
+.cardhead .spacer { flex: 1; }
+.anoms { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; margin-top: 10px; }
+.anom { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; cursor: pointer; background: var(--page); }
+.anom:hover { border-color: var(--ink-3); }
+.anom.zero { opacity: .55; cursor: default; }
+.anom.sel { outline: 2px solid var(--accent); outline-offset: -1px; }
+.anom .t { font-weight: 500; font-size: 13px; }
+.anom .v { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 2px; }
+.anom .d { font-size: 11px; color: var(--ink-3); }
+.sev { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 500; padding: 0 7px; border-radius: 10px; margin-right: 4px; vertical-align: 1px; }
+.sev.high { background: #d03b3b; color: #fff; }
+.sev.mid { background: #ec835a; color: #fff; }
+.sev.low { background: var(--surface-2); color: var(--ink-2); border: 1px solid var(--border); }
+.aibox { margin-top: 12px; border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 8px; padding: 12px 14px; background: var(--page); }
+.aibox .h { font-size: 12px; color: var(--ink-3); margin-bottom: 4px; }
+.md h2 { font-size: 15px; margin: 18px 0 6px; padding-bottom: 4px; border-bottom: 1px solid var(--border); }
+.md h3 { font-size: 14px; margin: 14px 0 4px; }
+.md p { margin: 6px 0; }
+.md ul, .md ol { margin: 6px 0; padding-left: 20px; }
+.md li { margin: 2px 0; }
+.md table { margin: 8px 0; border: 1px solid var(--border); }
+.md th, .md td { white-space: normal; }
+.report { margin-top: 12px; border: 1px solid var(--border); border-radius: 8px; padding: 24px 28px; background: var(--page); }
+.report .rh { border-bottom: 2px solid var(--ink); padding-bottom: 10px; margin-bottom: 14px; }
+.report .rh h1 { font-size: 20px; margin: 0 0 4px; }
+.report .rh .meta { font-size: 12px; color: var(--ink-2); }
+.report .kt { width: 100%; margin: 8px 0 4px; }
+.report .kt td { border: 1px solid var(--border); white-space: normal; }
+.report .kt td.k { background: var(--surface-2); color: var(--ink-2); width: 18%; font-size: 12px; }
+.report .foot { margin-top: 18px; font-size: 11px; color: var(--ink-3); border-top: 1px solid var(--border); padding-top: 8px; }
+.spin { display: inline-block; width: 12px; height: 12px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: sp .7s linear infinite; vertical-align: -2px; margin-right: 6px; }
+@keyframes sp { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<header>
+  <h1>법인카드 집근처 사용 분석</h1>
+  <span class="sub" id="dataLabel">데이터 없음</span>
+  <span class="spacer"></span>
+  <button id="btnGem">Gemini API 키 설정</button>
+  <button id="btnKey">카카오 API 키 설정</button>
+</header>
+
+<div class="layout">
+  <aside class="side">
+    <section class="panel">
+      <h2>1. 사용내역 데이터</h2>
+      <div class="row">
+        <button id="btnSample">샘플(홍길동) 불러오기</button>
+        <button id="btnUpload">엑셀 업로드</button>
+      </div>
+      <input type="file" id="file" accept=".xlsx,.xls,.csv" hidden>
+      <div class="hint">카드사 사용내역 양식(이용일·가맹점명·이용금액·가맹점 주소 등)을 그대로 올리면 됩니다. 파일은 브라우저 안에서만 처리됩니다.</div>
+    </section>
+
+    <section class="panel">
+      <h2>2. 집 위치 · 반경</h2>
+      <label class="f" for="homeAddr">집 주소</label>
+      <div class="row">
+        <input type="text" id="homeAddr" placeholder="예: 서울 강남구 헌릉로 730" style="flex:3">
+        <button id="btnHome">검색</button>
+      </div>
+      <button id="btnPick" style="width:100%;margin-top:6px">지도에서 직접 찍기</button>
+      <label class="f">반경</label>
+      <div class="seg" id="radiusSeg">
+        <button data-v="500">500m</button><button data-v="1000">1km</button><button data-v="2000">2km</button><button data-v="3000">3km</button><button data-v="5000">5km</button>
+      </div>
+      <div class="status" id="homeStatus"></div>
+    </section>
+
+    <section class="panel">
+      <h2>3. 분석 기간</h2>
+      <div class="seg" id="periodSeg">
+        <button data-v="1">최근 1개월</button><button data-v="3">최근 3개월</button><button data-v="all">전체</button>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <input type="date" id="dFrom"><input type="date" id="dTo">
+      </div>
+      <div class="hint">‘최근’은 데이터의 마지막 이용일 기준입니다.</div>
+      <label class="f">위치 분석 제외 업종 (주소가 본사 주소인 업종)</label>
+      <div class="checks" id="excl"></div>
+    </section>
+
+    <section class="panel">
+      <button class="primary" id="btnRun" style="width:100%">집근처 사용 분석 실행</button>
+      <div class="progress" id="prog"><div></div></div>
+      <div class="status" id="runStatus"></div>
+    </section>
+  </aside>
+
+  <main class="main">
+    <div class="kpis" id="kpis"></div>
+
+    <div class="maprow">
+      <section class="card">
+        <h2 id="mapTitle">집 근처 사용 지도</h2>
+        <div id="map"><div id="mapEmpty">카카오 JavaScript 키를 설정하면 지도가 표시됩니다.<br>오른쪽 위 ‘카카오 API 키 설정’을 눌러주세요.</div></div>
+        <div class="legend">
+          <span><i style="background:#2a78d6"></i>집</span>
+          <span><i style="background:#d03b3b"></i>반경 안 가맹점 (●안 숫자 = 건수)</span>
+          <span><i style="background:#8a8984"></i>반경 밖 가맹점</span>
+        </div>
+      </section>
+      <section class="card">
+        <h2>집 근처 가맹점 순위</h2>
+        <ul class="rank" id="rank"><li class="empty" style="cursor:default">분석을 실행하면 표시됩니다.</li></ul>
+      </section>
+    </div>
+
+    <section class="card">
+      <h2>주별 집근처 사용 금액</h2>
+      <div class="chart" id="chart"></div>
+      <div class="xlabels" id="xlabels"></div>
+    </section>
+
+    <section class="card">
+      <div class="cardhead">
+        <h2>이상징후 탐지</h2>
+        <span class="spacer"></span>
+        <button id="btnAiSum">✦ AI 요약 (Gemini)</button>
+      </div>
+      <div class="hint" id="anomMeta"></div>
+      <div class="anoms" id="anoms"></div>
+      <div class="aibox md" id="aiSum" hidden></div>
+    </section>
+
+    <section class="card">
+      <div class="cardhead">
+        <h2>경영진 보고서</h2>
+        <span class="spacer"></span>
+        <button class="primary" id="btnReport">✦ 보고서 생성 (Gemini)</button>
+        <button id="btnPrint" disabled>인쇄 / PDF</button>
+        <button id="btnCopy" disabled>복사</button>
+        <button id="btnHtml" disabled>HTML 저장</button>
+      </div>
+      <div class="hint">Gemini로는 집계 통계와 이상거래 목록(가맹점명·업종·금액·일시·집에서 거리)만 보냅니다. 카드번호·사업자번호·승인번호·집 주소는 보내지 않습니다.</div>
+      <article class="report" id="report"><div class="empty">데이터를 불러오고(위치 분석을 하면 집근처 항목까지 포함) ‘보고서 생성’을 누르세요.</div></article>
+    </section>
+
+    <section class="card">
+      <div class="tabs">
+        <button data-t="anom">이상징후 거래</button>
+        <button data-t="near" class="on">집 근처 사용</button>
+        <button data-t="flag">집 근처 + 휴일·심야</button>
+        <button data-t="all">기간 내 전체</button>
+        <button data-t="fail">위치 확인 실패</button>
+        <span class="spacer"></span>
+        <button id="btnCsv">CSV 내보내기</button>
+      </div>
+      <div class="tablewrap"><table id="tbl"></table></div>
+    </section>
+  </main>
+</div>
+
+<div class="tip" id="tip"></div>
+
+<dialog id="keyDlg">
+  <h2 style="margin-top:0;font-size:16px">카카오 지도 JavaScript 키</h2>
+  <ol>
+    <li><a href="https://developers.kakao.com/console/app" target="_blank" rel="noopener">카카오 developers</a> → 내 애플리케이션 → 앱 생성</li>
+    <li>앱 설정 → 플랫폼 → Web → 사이트 도메인에 <code id="originHint"></code> 등록</li>
+    <li>제품 설정 → 카카오맵 → 사용 설정 ON</li>
+    <li>앱 키 → <b>JavaScript 키</b>를 아래에 붙여넣기</li>
+  </ol>
+  <input type="text" id="keyInput" placeholder="JavaScript 키">
+  <div class="hint">키는 이 브라우저(localStorage)에만 저장됩니다.</div>
+  <div class="row" style="margin-top:14px;justify-content:flex-end">
+    <button id="keyCancel" style="flex:0">취소</button>
+    <button id="keySave" class="primary" style="flex:0">저장 후 지도 불러오기</button>
+  </div>
+</dialog>
+
+<dialog id="gemDlg">
+  <h2 style="margin-top:0;font-size:16px">Gemini API 키</h2>
+  <ol>
+    <li><a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio → API 키</a>에서 키 발급</li>
+    <li>아래에 붙여넣고 ‘모델 불러오기’ → 사용할 모델 선택</li>
+  </ol>
+  <label class="f" for="gemKey">API 키</label>
+  <input type="password" id="gemKey" placeholder="AIza…" autocomplete="off">
+  <label class="f" for="gemModel">모델</label>
+  <div class="row">
+    <select id="gemModel" style="flex:3"><option value="gemini-3.8-flash">gemini-3.8-flash</option></select>
+    <button id="gemList">모델 불러오기</button>
+  </div>
+  <label style="display:block;margin-top:10px;font-size:13px"><input type="checkbox" id="gemRemember"> 이 브라우저에 키 저장 (체크하지 않으면 탭을 닫을 때 지워짐)</label>
+  <div class="status" id="gemStatus"></div>
+  <div class="row" style="margin-top:14px;justify-content:flex-end">
+    <button id="gemClear" style="flex:0">키 삭제</button>
+    <button id="gemCancel" style="flex:0">취소</button>
+    <button id="gemSave" class="primary" style="flex:0">저장</button>
+  </div>
+</dialog>
+
+<script>
+(() => {
+'use strict';
+const $ = s => document.querySelector(s);
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
+};
+const won = n => Math.round(n).toLocaleString('ko-KR') + '원';
+const manwon = n => n >= 10000 ? (n / 10000).toLocaleString('ko-KR', { maximumFractionDigits: 1 }) + '만원' : won(n);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const ymd = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+// 공휴일(대체공휴일 포함) 2025~2026
+const HOLIDAYS = new Set([
+  '2025-01-01','2025-01-27','2025-01-28','2025-01-29','2025-01-30','2025-03-01','2025-03-03','2025-05-05','2025-05-06','2025-06-03','2025-06-06','2025-08-15','2025-10-03','2025-10-06','2025-10-07','2025-10-08','2025-10-09','2025-12-25',
+  '2026-01-01','2026-02-16','2026-02-17','2026-02-18','2026-03-01','2026-03-02','2026-05-05','2026-05-24','2026-05-25','2026-06-03','2026-06-06','2026-08-15','2026-08-17','2026-09-24','2026-09-25','2026-09-26','2026-10-03','2026-10-05','2026-10-09','2026-12-25'
+]);
+const LOCATIONLESS = ['PG쇼핑몰', '택시', '항공사', '통신요금', '온라인'];
+const HIGH_AMOUNT = 300000;
+
+const state = {
+  rows: [], source: '',
+  home: store.get('home', null),          // {addr, lat, lng}
+  radius: store.get('radius', 1000),
+  period: store.get('period', '1'),
+  excl: store.get('excl', ['PG쇼핑몰', '택시']),
+  geo: store.get('geoCache', {}),          // addr -> {lat,lng,how} | {fail:true}
+  tab: 'near', analyzed: null
+};
+
+// ---------- 데이터 로딩 ----------
+function parseDate(v) {
+  if (v instanceof Date) return new Date(v.getFullYear(), v.getMonth(), v.getDate());
+  if (typeof v === 'number') { const d = new Date(Math.round((v - 25569) * 86400000)); return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()); }
+  const m = String(v || '').match(/(\d{4})\D?(\d{1,2})\D?(\d{1,2})/);
+  return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null;
+}
+function parseTime(v) {
+  if (typeof v === 'number' && v < 1) { const s = Math.round(v * 86400); return `${String(Math.floor(s / 3600)).padStart(2, '0')}:${String(Math.floor(s / 60) % 60).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; }
+  if (v instanceof Date) return v.toTimeString().slice(0, 8);
+  const m = String(v || '').match(/(\d{1,2}):?(\d{2}):?(\d{2})?/);
+  return m ? `${m[1].padStart(2, '0')}:${m[2]}:${m[3] || '00'}` : '';
+}
+const pick = (o, ...keys) => { for (const k of keys) { const hit = Object.keys(o).find(x => x.replace(/\s/g, '') === k); if (hit != null && o[hit] !== '' && o[hit] != null) return o[hit]; } return ''; };
+function normalize(list) {
+  return list.map((o, i) => {
+    const date = parseDate(pick(o, '이용일', '이용일자', '승인일자', '거래일'));
+    const amt = Number(String(pick(o, '이용금액', '승인금액', '금액')).replace(/[^\d.-]/g, '')) || 0;
+    return {
+      id: i, no: pick(o, '순번') || i + 1, date, time: parseTime(pick(o, '승인시간', '이용시간')),
+      user: pick(o, '이용자명', '사용자'), merchant: String(pick(o, '가맹점명')).trim(), amount: amt,
+      addr: String(pick(o, '가맹점주소', '주소')).replace(/\s+/g, ' ').trim(),
+      biz: String(pick(o, '가맹점업종명', '업종명', '업종')).trim(), status: pick(o, '전표구분')
+    };
+  }).filter(r => r.date && r.merchant);
+}
+function loadRows(list, source) {
+  state.rows = normalize(list);
+  state.source = source;
+  const users = [...new Set(state.rows.map(r => r.user).filter(Boolean))].join(', ');
+  const ds = state.rows.map(r => r.date).sort((a, b) => a - b);
+  $('#dataLabel').textContent = state.rows.length
+    ? `${source} · ${users || '이용자 미상'} · ${state.rows.length}건 · ${ymd(ds[0])} ~ ${ymd(ds[ds.length - 1])}`
+    : '데이터 없음';
+  renderExclusions();
+  applyPeriod(state.period);
+  state.analyzed = null;
+  renderAll();
+}
+$('#btnSample').onclick = () => window.SAMPLE_DATA ? loadRows(window.SAMPLE_DATA, '샘플 데이터') : alert('sample-data.js를 찾을 수 없습니다.');
+$('#btnUpload').onclick = () => $('#file').click();
+$('#file').onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  try {
+    const wb = XLSX.read(await f.arrayBuffer(), { cellDates: true });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    // 헤더 행 자동 탐색 (가맹점명이 있는 첫 행)
+    const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+    const hi = aoa.findIndex(r => r.some(c => String(c).replace(/\s/g, '') === '가맹점명'));
+    const list = XLSX.utils.sheet_to_json(ws, { range: Math.max(hi, 0), defval: '' });
+    loadRows(list, f.name);
+  } catch (err) { alert('엑셀을 읽지 못했습니다: ' + err.message); }
+  e.target.value = '';
+};
+
+// ---------- 기간 / 옵션 ----------
+function dataRange() {
+  const ds = state.rows.map(r => r.date.getTime());
+  return ds.length ? [new Date(Math.min(...ds)), new Date(Math.max(...ds))] : null;
+}
+function applyPeriod(p) {
+  state.period = p; store.set('period', p);
+  document.querySelectorAll('#periodSeg button').forEach(b => b.classList.toggle('on', b.dataset.v === p));
+  const rg = dataRange(); if (!rg) return;
+  let from = rg[0];
+  if (p !== 'all' && p !== 'custom') { from = new Date(rg[1]); from.setMonth(from.getMonth() - Number(p)); from.setDate(from.getDate() + 1); }
+  if (p !== 'custom') { $('#dFrom').value = ymd(from); $('#dTo').value = ymd(rg[1]); }
+}
+document.querySelectorAll('#periodSeg button').forEach(b => b.onclick = () => { applyPeriod(b.dataset.v); state.analyzed ? analyze() : renderAll(); });
+['#dFrom', '#dTo'].forEach(s => $(s).onchange = () => { applyPeriod('custom'); state.analyzed ? analyze() : renderAll(); });
+
+function renderRadius() { document.querySelectorAll('#radiusSeg button').forEach(b => b.classList.toggle('on', +b.dataset.v === state.radius)); }
+document.querySelectorAll('#radiusSeg button').forEach(b => b.onclick = () => { state.radius = +b.dataset.v; store.set('radius', state.radius); renderRadius(); if (state.analyzed) analyze(); else drawHome(); });
+
+function renderExclusions() {
+  const cats = [...new Set(state.rows.map(r => r.biz).filter(Boolean))];
+  const shown = cats.filter(c => LOCATIONLESS.some(k => c.includes(k)) || state.excl.includes(c));
+  $('#excl').innerHTML = shown.length ? shown.map(c => `<label><input type="checkbox" value="${esc(c)}" ${state.excl.includes(c) ? 'checked' : ''}> ${esc(c)}</label>`).join('') : '<span class="hint">해당 업종 없음</span>';
+  $('#excl').querySelectorAll('input').forEach(i => i.onchange = () => {
+    state.excl = [...$('#excl').querySelectorAll('input:checked')].map(x => x.value); store.set('excl', state.excl);
+    if (state.analyzed) analyze();
+  });
+}
+
+// ---------- 카카오 지도 ----------
+let map, geocoder, places, homeOverlay, circle, overlays = [], openIw = null, picking = false;
+const kakaoKey = () => store.get('kakaoKey', '');
+function loadKakao() {
+  return new Promise((res, rej) => {
+    if (window.kakao && kakao.maps && kakao.maps.services) return res();
+    const key = kakaoKey(); if (!key) return rej(new Error('NOKEY'));
+    const s = document.createElement('script');
+    s.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${encodeURIComponent(key)}&libraries=services&autoload=false`;
+    s.onload = () => kakao.maps.load(res);
+    s.onerror = () => rej(new Error('카카오 SDK 로딩 실패 — 키 또는 등록된 도메인을 확인하세요.'));
+    document.head.appendChild(s);
+  });
+}
+async function initMap() {
+  try { await loadKakao(); } catch (e) {
+    $('#mapEmpty').innerHTML = e.message === 'NOKEY' ? $('#mapEmpty').innerHTML : esc(e.message);
+    return false;
+  }
+  if (map) return true;
+  $('#mapEmpty').remove();
+  const c = state.home ? new kakao.maps.LatLng(state.home.lat, state.home.lng) : new kakao.maps.LatLng(37.5665, 126.978);
+  map = new kakao.maps.Map($('#map'), { center: c, level: 6 });
+  map.addControl(new kakao.maps.ZoomControl(), kakao.maps.ControlPosition.RIGHT);
+  geocoder = new kakao.maps.services.Geocoder();
+  places = new kakao.maps.services.Places();
+  kakao.maps.event.addListener(map, 'click', e => { if (picking) setHomeByCoord(e.latLng.getLat(), e.latLng.getLng()); });
+  drawHome();
+  if (state.analyzed) drawMarkers();
+  return true;
+}
+function drawHome() {
+  if (!map || !state.home) return;
+  const p = new kakao.maps.LatLng(state.home.lat, state.home.lng);
+  if (!homeOverlay) {
+    const el = document.createElement('div'); el.className = 'mk home'; el.textContent = '⌂'; el.title = '집';
+    homeOverlay = new kakao.maps.CustomOverlay({ position: p, content: el, zIndex: 10 });
+    homeOverlay.setMap(map);
+    circle = new kakao.maps.Circle({ center: p, radius: state.radius, strokeWeight: 2, strokeColor: '#2a78d6', strokeOpacity: .8, strokeStyle: 'dash', fillColor: '#2a78d6', fillOpacity: .08 });
+    circle.setMap(map);
+  }
+  homeOverlay.setPosition(p); circle.setPosition(p); circle.setRadius(state.radius);
+  map.setBounds(circle.getBounds(), 40, 40, 40, 40);
+  $('#mapTitle').textContent = `집 근처 사용 지도 · 반경 ${state.radius >= 1000 ? state.radius / 1000 + 'km' : state.radius + 'm'}`;
+}
+
+// 주소 → 좌표 (주소검색 → 뒤쪽 토큰 제거 재시도 → 키워드검색)
+const addrSearch = q => new Promise(r => geocoder.addressSearch(q, (d, s) => r(s === kakao.maps.services.Status.OK ? d[0] : null)));
+const kwSearch = (q, opt) => new Promise(r => places.keywordSearch(q, (d, s) => r(s === kakao.maps.services.Status.OK ? d[0] : null), opt));
+async function geocodeAddr(addr, merchant) {
+  if (!addr) return { fail: true };
+  const toks = addr.split(' ');
+  for (let n = toks.length; n >= Math.min(3, toks.length); n--) {
+    const hit = await addrSearch(toks.slice(0, n).join(' '));
+    if (hit) return { lat: +hit.y, lng: +hit.x, how: n === toks.length ? '주소' : '주소(일부)' };
+  }
+  if (merchant) {
+    const gu = toks.slice(0, 2).join(' ');
+    const hit = await kwSearch(`${gu} ${merchant.replace(/\(.*?\)|주식회사|\(주\)/g, '')}`);
+    if (hit) return { lat: +hit.y, lng: +hit.x, how: '가맹점명' };
+  }
+  return { fail: true };
+}
+async function findHome() {
+  const q = $('#homeAddr').value.trim(); if (!q) return;
+  if (!(await initMap())) return openKeyDlg();
+  $('#homeStatus').textContent = '검색 중…';
+  let hit = await addrSearch(q), label = hit ? (hit.road_address?.address_name || hit.address_name) : '';
+  if (!hit) { const k = await kwSearch(q); if (k) { hit = k; label = k.road_address_name || k.address_name; } }
+  if (!hit) { $('#homeStatus').textContent = '주소를 찾지 못했습니다. 지도에서 직접 찍어보세요.'; return; }
+  setHome({ addr: label || q, lat: +hit.y, lng: +hit.x });
+}
+function setHomeByCoord(lat, lng) {
+  geocoder.coord2Address(lng, lat, (d, s) => {
+    const a = s === kakao.maps.services.Status.OK ? (d[0].road_address?.address_name || d[0].address.address_name) : `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+    $('#homeAddr').value = a;
+    setHome({ addr: a, lat, lng });
+  });
+  togglePick(false);
+}
+function setHome(h) {
+  state.home = h; store.set('home', h);
+  $('#homeStatus').textContent = `✓ 집 위치: ${h.addr}`;
+  drawHome();
+  if (state.analyzed) analyze();
+}
+function togglePick(on) {
+  picking = on; $('#btnPick').classList.toggle('on', on);
+  $('#btnPick').textContent = on ? '지도를 클릭하세요 (취소하려면 다시 클릭)' : '지도에서 직접 찍기';
+  if (map) map.setCursor(on ? 'crosshair' : '');
+}
+$('#btnHome').onclick = findHome;
+$('#homeAddr').onkeydown = e => { if (e.key === 'Enter') findHome(); };
+$('#btnPick').onclick = async () => { if (!(await initMap())) return openKeyDlg(); togglePick(!picking); };
+
+// ---------- 분석 ----------
+function haversine(a, b) {
+  const R = 6371000, t = x => x * Math.PI / 180;
+  const dLa = t(b.lat - a.lat), dLo = t(b.lng - a.lng);
+  const h = Math.sin(dLa / 2) ** 2 + Math.cos(t(a.lat)) * Math.cos(t(b.lat)) * Math.sin(dLo / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+function flagsOf(r) {
+  const f = [], key = ymd(r.date), dow = r.date.getDay(), hh = parseInt(r.time) || 12;
+  if (HOLIDAYS.has(key)) f.push('공휴일'); else if (dow === 0 || dow === 6) f.push('주말');
+  if (hh >= 22 || hh < 6) f.push('심야');
+  if (/주점|유흥|노래|단란/.test(r.biz)) f.push('주점');
+  if (r.amount >= HIGH_AMOUNT) f.push('고액');
+  return f;
+}
+async function analyze() {
+  if (!state.rows.length) return alert('먼저 사용내역 데이터를 불러오세요.');
+  if (!(await initMap())) return openKeyDlg();
+  if (!state.home) { $('#homeStatus').textContent = '집 주소를 먼저 검색하세요.'; $('#homeAddr').focus(); return; }
+  const from = new Date($('#dFrom').value + 'T00:00'), to = new Date($('#dTo').value + 'T23:59');
+  const inRange = state.rows.filter(r => r.date >= from && r.date <= to && r.amount > 0);
+  // 지오코딩 (캐시)
+  const todo = [...new Map(inRange.filter(r => !state.excl.includes(r.biz) && !state.geo[r.addr]).map(r => [r.addr, r])).values()];
+  const btn = $('#btnRun'); btn.disabled = true;
+  $('#prog').style.display = todo.length ? 'block' : 'none';
+  for (let i = 0; i < todo.length; i++) {
+    $('#runStatus').textContent = `가맹점 위치 확인 중… ${i + 1}/${todo.length}`;
+    $('#prog > div').style.width = ((i + 1) / todo.length * 100) + '%';
+    state.geo[todo[i].addr] = await geocodeAddr(todo[i].addr, todo[i].merchant);
+  }
+  store.set('geoCache', state.geo);
+  $('#prog').style.display = 'none'; btn.disabled = false;
+
+  const list = inRange.map(r => {
+    const excluded = state.excl.includes(r.biz), g = state.geo[r.addr];
+    const pos = !excluded && g && !g.fail ? g : null;
+    const dist = pos ? haversine(state.home, pos) : null;
+    return { ...r, excluded, pos, how: g?.how, dist, near: dist != null && dist <= state.radius, flags: flagsOf(r), geoFail: !excluded && (!g || g.fail) };
+  });
+  state.analyzed = list;
+  const near = list.filter(r => r.near);
+  $('#runStatus').textContent = `완료 · 기간 내 ${list.length}건 중 집 근처 ${near.length}건`;
+  renderAll();
+}
+$('#btnRun').onclick = analyze;
+
+// ---------- 렌더링 ----------
+function renderAll() { renderKpis(); renderRank(); renderChart(); renderAnomalies(); renderTable(); if (map) drawMarkers(); }
+function renderKpis() {
+  const L = state.analyzed;
+  const kp = (k, v, s) => `<div class="kpi"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`;
+  if (!L) {
+    $('#kpis').innerHTML = kp('불러온 사용내역', state.rows.length ? state.rows.length + '건' : '–', state.rows.length ? manwon(state.rows.reduce((a, r) => a + r.amount, 0)) : '데이터를 불러오세요')
+      + kp('집 근처 사용', '–', '분석 전') + kp('집 근처 비중', '–', '') + kp('휴일·주말 집근처', '–', '') + kp('심야 집근처', '–', '');
+    return;
+  }
+  const sum = a => a.reduce((s, r) => s + r.amount, 0);
+  const near = L.filter(r => r.near), loc = L.filter(r => r.pos);
+  const hol = near.filter(r => r.flags.includes('주말') || r.flags.includes('공휴일'));
+  const night = near.filter(r => r.flags.includes('심야'));
+  const pct = sum(loc) ? (sum(near) / sum(loc) * 100) : 0;
+  $('#kpis').innerHTML =
+    kp('기간 내 사용', manwon(sum(L)), `${L.length}건 · ${$('#dFrom').value} ~ ${$('#dTo').value}`) +
+    kp('집 근처 사용', manwon(sum(near)), `${near.length}건 · 반경 ${state.radius >= 1000 ? state.radius / 1000 + 'km' : state.radius + 'm'}`) +
+    kp('집 근처 비중', pct.toFixed(1) + '%', `위치 확인된 ${loc.length}건 금액 기준`) +
+    kp('휴일·주말 집근처', manwon(sum(hol)), `${hol.length}건`) +
+    kp('심야(22~06시) 집근처', manwon(sum(night)), `${night.length}건`);
+}
+function groupByPlace(list) {
+  const m = new Map();
+  for (const r of list) {
+    const k = r.pos.lat.toFixed(5) + ',' + r.pos.lng.toFixed(5);
+    if (!m.has(k)) m.set(k, { pos: r.pos, near: r.near, dist: r.dist, rows: [], names: new Set() });
+    const g = m.get(k); g.rows.push(r); g.names.add(r.merchant);
+  }
+  return [...m.values()].map(g => ({ ...g, total: g.rows.reduce((a, r) => a + r.amount, 0) }));
+}
+function renderRank() {
+  const L = state.analyzed;
+  if (!L) return;
+  const groups = groupByPlace(L.filter(r => r.near)).sort((a, b) => b.total - a.total);
+  $('#rank').innerHTML = groups.length ? groups.map((g, i) => `<li data-i="${i}">
+      <span class="n">${esc([...g.names].join(', '))}</span><span class="a">${manwon(g.total)}</span>
+      <span class="m">${g.rows.length}건 · 집에서 ${Math.round(g.dist)}m · ${esc(g.rows[0].biz)}${g.rows.some(r => r.flags.length) ? ' · ' + [...new Set(g.rows.flatMap(r => r.flags))].join('/') : ''}</span></li>`).join('')
+    : '<li class="empty" style="cursor:default">반경 안 사용 내역이 없습니다.</li>';
+  $('#rank').querySelectorAll('li[data-i]').forEach(li => li.onclick = () => focusPlace(groups[+li.dataset.i]));
+}
+function weekStart(d) { const x = new Date(d); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; }
+function renderChart() {
+  const L = state.analyzed, tip = $('#tip');
+  if (!L) { $('#chart').innerHTML = '<div class="empty">분석을 실행하면 표시됩니다.</div>'; $('#xlabels').innerHTML = ''; return; }
+  const from = weekStart(new Date($('#dFrom').value + 'T00:00')), to = new Date($('#dTo').value + 'T00:00');
+  const weeks = [];
+  for (let d = new Date(from); d <= to; d.setDate(d.getDate() + 7)) weeks.push({ start: new Date(d), sum: 0, n: 0 });
+  for (const r of L.filter(r => r.near)) { const w = weeks.find(w => +w.start === +weekStart(r.date)); if (w) { w.sum += r.amount; w.n++; } }
+  const max = Math.max(...weeks.map(w => w.sum), 1);
+  $('#chart').innerHTML = weeks.map((w, i) => `<div class="col" data-i="${i}"><div class="bar" style="height:${w.sum / max * 100}%"></div></div>`).join('');
+  const every = Math.ceil(weeks.length / 12);
+  $('#xlabels').innerHTML = weeks.map((w, i) => `<span>${i % every === 0 ? (w.start.getMonth() + 1) + '/' + w.start.getDate() : ''}</span>`).join('');
+  $('#chart').querySelectorAll('.col').forEach(c => {
+    const w = weeks[+c.dataset.i], end = new Date(w.start); end.setDate(end.getDate() + 6);
+    c.onmousemove = e => { tip.style.display = 'block'; tip.style.left = e.clientX + 12 + 'px'; tip.style.top = e.clientY - 34 + 'px'; tip.textContent = `${ymd(w.start)} ~ ${ymd(end)} 주 · ${w.n}건 · ${won(w.sum)}`; };
+    c.onmouseleave = () => tip.style.display = 'none';
+  });
+}
+function tableRows() {
+  const L = state.analyzed || [];
+  if (state.tab === 'anom') {
+    const A = state.anom; if (!A) return [];
+    const ids = state.anomRule ? new Set(A.rules.find(x => x.id === state.anomRule).rows.map(r => r.id)) : null;
+    return A.scored.filter(r => !ids || ids.has(r.id));
+  }
+  return {
+    near: L.filter(r => r.near),
+    flag: L.filter(r => r.near && r.flags.some(f => f !== '고액')),
+    all: L,
+    fail: L.filter(r => r.geoFail)
+  }[state.tab];
+}
+function renderTable() {
+  const rows = tableRows().slice();
+  if (state.tab !== 'anom') rows.sort((a, b) => b.date - a.date || b.time.localeCompare(a.time));
+  const why = r => state.tab === 'anom' && state.anom ? state.anom.reasons.get(r.id).map(x => `<span class="sev ${x.sev}">${x.name}</span>`).join('') : r.flags.map(f => `<span class="chip">${f}</span>`).join('');
+  const DOW = '일월화수목금토';
+  $('#tbl').innerHTML = `<thead><tr><th>이용일</th><th>시간</th><th>가맹점명</th><th>업종</th><th class="num">금액</th><th class="num">집에서 거리</th><th>점검 포인트</th><th>가맹점 주소</th></tr></thead><tbody>` +
+    (rows.length ? rows.map(r => `<tr class="${r.near ? 'near' : ''}" data-id="${r.id}">
+      <td>${ymd(r.date)} (${DOW[r.date.getDay()]})</td><td>${esc(r.time.slice(0, 5))}</td><td>${esc(r.merchant)}</td><td>${esc(r.biz)}</td>
+      <td class="num">${won(r.amount)}</td>
+      <td class="num">${r.dist != null ? (r.dist >= 1000 ? (r.dist / 1000).toFixed(1) + 'km' : Math.round(r.dist) + 'm') : (r.excluded ? '<span class="chip g">제외 업종</span>' : '<span class="chip g">위치 미확인</span>')}</td>
+      <td>${why(r)}${r.how && r.how !== '주소' ? `<span class="chip g">${r.how} 기준</span>` : ''}</td>
+      <td>${esc(r.addr)}</td></tr>`).join('')
+      : `<tr><td colspan="8" class="empty">${state.analyzed || state.tab === 'anom' ? '해당 내역이 없습니다.' : '분석을 실행하면 표시됩니다.'}</td></tr>`) + '</tbody>';
+  $('#tbl').querySelectorAll('tr[data-id]').forEach(tr => tr.onclick = () => {
+    const r = state.analyzed?.find(x => x.id === +tr.dataset.id); if (!r?.pos || !map) return;
+    const g = groupByPlace(state.analyzed.filter(x => x.pos)).find(g => g.rows.includes(r)); focusPlace(g);
+    $('#map').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  });
+}
+document.querySelectorAll('.tabs button[data-t]').forEach(b => b.onclick = () => {
+  state.tab = b.dataset.t; if (state.tab === 'anom') state.anomRule = null;
+  document.querySelectorAll('.tabs button[data-t]').forEach(x => x.classList.toggle('on', x === b)); renderAnomalies(); renderTable();
+});
+$('#btnCsv').onclick = () => {
+  const rows = tableRows(); if (!rows?.length) return;
+  const head = ['이용일', '승인시간', '이용자', '가맹점명', '업종', '이용금액', '집에서거리(m)', '집근처', '점검포인트', '가맹점주소'];
+  const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const reasons = r => state.tab === 'anom' && state.anom ? state.anom.reasons.get(r.id).map(x => x.name).join('/') : r.flags.join('/');
+  const csv = '﻿' + [head, ...rows.map(r => [ymd(r.date), r.time, r.user, r.merchant, r.biz, r.amount, r.dist != null ? Math.round(r.dist) : '', r.near ? 'Y' : 'N', reasons(r), r.addr])].map(a => a.map(q).join(',')).join('\r\n');
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+  a.download = `집근처사용_${state.tab}_${$('#dFrom').value}_${$('#dTo').value}.csv`; a.click();
+};
+
+// ---------- 지도 마커 ----------
+function drawMarkers() {
+  overlays.forEach(o => o.setMap(null)); overlays = []; closeIw();
+  const L = state.analyzed; if (!L) return;
+  for (const g of groupByPlace(L.filter(r => r.pos))) {
+    const el = document.createElement('div'); el.className = 'mk';
+    const size = Math.max(18, Math.min(40, 14 + Math.sqrt(g.total / 10000) * 2.2));
+    Object.assign(el.style, { width: size + 'px', height: size + 'px', background: g.near ? '#d03b3b' : '#8a8984', opacity: g.near ? 1 : .75 });
+    el.textContent = g.near ? g.rows.length : '';
+    el.title = [...g.names].join(', ');
+    el.onclick = () => openPlace(g);
+    const o = new kakao.maps.CustomOverlay({ position: new kakao.maps.LatLng(g.pos.lat, g.pos.lng), content: el, zIndex: g.near ? 5 : 1 });
+    o.setMap(map); overlays.push(o);
+  }
+}
+function closeIw() { if (openIw) { openIw.setMap(null); openIw = null; } }
+function openPlace(g) {
+  closeIw();
+  const el = document.createElement('div'); el.className = 'iw';
+  el.innerHTML = `<span class="x">✕</span><b>${esc([...g.names].join(', '))}</b><br>
+    <span style="color:#666">${esc(g.rows[0].addr)}</span><br>집에서 ${g.dist >= 1000 ? (g.dist / 1000).toFixed(2) + 'km' : Math.round(g.dist) + 'm'} · ${g.rows.length}건 · <b>${won(g.total)}</b>
+    <table>${g.rows.slice().sort((a, b) => b.date - a.date).slice(0, 8).map(r => `<tr><td>${ymd(r.date)}</td><td>${esc(r.time.slice(0, 5))}</td><td style="text-align:right">${won(r.amount)}</td><td>${r.flags.join(' ')}</td></tr>`).join('')}</table>
+    ${g.rows.length > 8 ? `<div style="color:#888">외 ${g.rows.length - 8}건</div>` : ''}`;
+  el.querySelector('.x').onclick = closeIw;
+  openIw = new kakao.maps.CustomOverlay({ position: new kakao.maps.LatLng(g.pos.lat, g.pos.lng), content: el, zIndex: 20 });
+  openIw.setMap(map);
+}
+function focusPlace(g) { if (!map || !g) return; map.panTo(new kakao.maps.LatLng(g.pos.lat, g.pos.lng)); openPlace(g); }
+
+// ---------- 키 설정 ----------
+function openKeyDlg() { $('#originHint').textContent = location.protocol === 'file:' ? 'http://localhost:8080 (start.bat 실행 후)' : location.origin; $('#keyInput').value = kakaoKey(); $('#keyDlg').showModal(); }
+$('#btnKey').onclick = openKeyDlg;
+$('#keyCancel').onclick = () => $('#keyDlg').close();
+$('#keySave').onclick = () => {
+  const k = $('#keyInput').value.trim(); if (!k) return;
+  const changed = k !== kakaoKey(); store.set('kakaoKey', k); $('#keyDlg').close();
+  if (changed && window.kakao) location.reload(); else initMap();
+};
+
+// ---------- 이상징후 탐지 (규칙 기반) ----------
+const SEV = { high: { w: 3, label: '높음', icon: '▲' }, mid: { w: 2, label: '중간', icon: '●' }, low: { w: 1, label: '낮음', icon: '○' } };
+function currentList() {
+  if (state.analyzed) return state.analyzed;
+  if (!state.rows.length || !$('#dFrom').value) return [];
+  const from = new Date($('#dFrom').value + 'T00:00'), to = new Date($('#dTo').value + 'T23:59');
+  return state.rows.filter(r => r.date >= from && r.date <= to && r.amount > 0).map(r => ({ ...r, near: false, dist: null, flags: flagsOf(r) }));
+}
+function detectAnomalies(list) {
+  const geo = !!state.analyzed;
+  const isHol = r => r.flags.includes('주말') || r.flags.includes('공휴일');
+  const night = r => r.flags.includes('심야');
+  const hh = r => parseInt(r.time) || 12;
+  // 분할결제: 같은 가맹점·같은 날 30분 내 연속 승인
+  const split = new Set(), byKey = new Map();
+  for (const r of list) { const k = r.merchant + '|' + ymd(r.date); if (!byKey.has(k)) byKey.set(k, []); byKey.get(k).push(r); }
+  const sec = t => { const [h, m, s] = t.split(':').map(Number); return h * 3600 + m * 60 + (s || 0); };
+  for (const g of byKey.values()) {
+    g.sort((a, b) => a.time.localeCompare(b.time));
+    for (let i = 1; i < g.length; i++) if (g[i].time && g[i - 1].time && sec(g[i].time) - sec(g[i - 1].time) <= 1800) { split.add(g[i].id); split.add(g[i - 1].id); }
+  }
+  const nearCnt = new Map(); list.filter(r => r.near).forEach(r => nearCnt.set(r.merchant, (nearCnt.get(r.merchant) || 0) + 1));
+  const R = (id, name, sev, desc, pred, needGeo) => ({ id, name, sev, desc, needGeo: needGeo && !geo, rows: needGeo && !geo ? [] : list.filter(pred) });
+  const rules = [
+    R('holNear', '휴일·주말 집근처 사용', 'high', '주말·공휴일에 집 반경 안에서 결제', r => r.near && isHol(r), true),
+    R('nightNear', '심야 집근처 사용', 'high', '22시~06시 집 반경 안 결제', r => r.near && night(r), true),
+    R('bar', '주점·유흥 업종', 'high', '주점·유흥·노래방 등 제한 업종', r => r.flags.includes('주점')),
+    R('split', '분할결제 의심', 'high', '같은 가맹점·같은 날 30분 내 2건 이상', r => split.has(r.id)),
+    R('eveNear', '평일 저녁 집근처 사용', 'mid', '평일 19~22시 집 반경 안 결제', r => r.near && !isHol(r) && hh(r) >= 19 && !night(r), true),
+    R('repeat', '집근처 동일 가맹점 반복', 'mid', '기간 내 같은 집근처 가맹점 3회 이상', r => r.near && nearCnt.get(r.merchant) >= 3, true),
+    R('high', '고액 결제', 'mid', `건당 ${HIGH_AMOUNT / 10000}만원 이상`, r => r.amount >= HIGH_AMOUNT),
+    R('hol', '휴일·주말 사용', 'low', geo ? '집 반경 밖 주말·공휴일 결제' : '주말·공휴일 결제', r => !r.near && isHol(r)),
+    R('night', '심야 사용', 'low', geo ? '집 반경 밖 22시~06시 결제' : '22시~06시 결제', r => !r.near && night(r))
+  ];
+  const reasons = new Map();
+  for (const rule of rules) for (const r of rule.rows) { if (!reasons.has(r.id)) reasons.set(r.id, []); reasons.get(r.id).push(rule); }
+  const scored = list.filter(r => reasons.has(r.id))
+    .map(r => ({ ...r, score: reasons.get(r.id).reduce((s, x) => s + SEV[x.sev].w, 0) }))
+    .sort((a, b) => b.score - a.score || b.amount - a.amount);
+  return { rules, reasons, scored, list, geo };
+}
+function renderAnomalies() {
+  const list = currentList();
+  state.anom = list.length ? detectAnomalies(list) : null;
+  const A = state.anom;
+  if (!A) { $('#anomMeta').textContent = '데이터를 불러오면 자동으로 탐지합니다.'; $('#anoms').innerHTML = ''; return; }
+  const sum = a => a.reduce((s, r) => s + r.amount, 0);
+  const hi = A.scored.filter(r => A.reasons.get(r.id).some(x => x.sev === 'high'));
+  $('#anomMeta').innerHTML = `기간 내 ${A.list.length}건 중 <b>${A.scored.length}건</b>(${manwon(sum(A.scored))})이 1개 이상 규칙에 해당 · 위험 ‘높음’ ${hi.length}건`
+    + (A.geo ? '' : ' · <span style="color:var(--ink-2)">집근처 항목은 위치 분석 실행 후 표시됩니다</span>') + ' · 카드를 누르면 아래 표에서 해당 거래를 봅니다.';
+  $('#anoms').innerHTML = A.rules.map(x => `<div class="anom ${x.rows.length ? '' : 'zero'} ${state.tab === 'anom' && state.anomRule === x.id ? 'sel' : ''}" data-id="${x.id}">
+      <div class="t"><span class="sev ${x.sev}">${SEV[x.sev].icon} ${SEV[x.sev].label}</span>${x.name}</div>
+      <div class="v">${x.needGeo ? '–' : x.rows.length + '건'} <span style="font-size:13px;font-weight:500;color:var(--ink-2)">${x.needGeo ? '위치 분석 필요' : manwon(sum(x.rows))}</span></div>
+      <div class="d">${x.desc}</div></div>`).join('');
+  $('#anoms').querySelectorAll('.anom').forEach(el => el.onclick = () => {
+    const x = A.rules.find(r => r.id === el.dataset.id); if (!x.rows.length) return;
+    state.tab = 'anom'; state.anomRule = state.anomRule === x.id ? null : x.id;
+    document.querySelectorAll('.tabs button[data-t]').forEach(b => b.classList.toggle('on', b.dataset.t === 'anom'));
+    renderAnomalies(); renderTable();
+    $('#tbl').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+}
+
+// ---------- Gemini ----------
+const gem = {
+  key: store.get('gemKey', '') || sessionStorage.getItem('gemKey') || '',
+  model: store.get('gemModel', 'gemini-3.8-flash')
+};
+const GEM_BASE = 'https://generativelanguage.googleapis.com/v1beta';
+function openGemDlg() {
+  $('#gemKey').value = gem.key; $('#gemRemember').checked = !!store.get('gemKey', '');
+  const sel = $('#gemModel'); if (![...sel.options].some(o => o.value === gem.model)) sel.add(new Option(gem.model, gem.model));
+  sel.value = gem.model; $('#gemStatus').textContent = ''; $('#gemDlg').showModal();
+}
+async function listModels() {
+  const key = $('#gemKey').value.trim(); if (!key) { $('#gemStatus').textContent = 'API 키를 먼저 입력하세요.'; return; }
+  $('#gemStatus').textContent = '모델 목록 불러오는 중…';
+  try {
+    const res = await fetch(`${GEM_BASE}/models?pageSize=200&key=${encodeURIComponent(key)}`);
+    const j = await res.json(); if (!res.ok) throw new Error(j.error?.message || res.status);
+    const ids = (j.models || []).filter(m => (m.supportedGenerationMethods || []).includes('generateContent'))
+      .map(m => m.name.replace(/^models\//, '')).filter(n => /^gemini/.test(n) && !/(embed|tts|image|audio|live|vision)/.test(n)).sort().reverse();
+    const sel = $('#gemModel'), cur = sel.value;
+    sel.innerHTML = ids.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
+    sel.value = ids.includes(cur) ? cur : (ids.find(n => /flash$/.test(n)) || ids[0]);
+    $('#gemStatus').textContent = `✓ 키 확인 완료 · 사용 가능한 모델 ${ids.length}개`;
+  } catch (e) { $('#gemStatus').textContent = '실패: ' + e.message; }
+}
+$('#btnGem').onclick = openGemDlg;
+$('#gemList').onclick = listModels;
+$('#gemCancel').onclick = () => $('#gemDlg').close();
+$('#gemClear').onclick = () => { gem.key = ''; store.set('gemKey', ''); sessionStorage.removeItem('gemKey'); $('#gemKey').value = ''; $('#gemStatus').textContent = '키를 삭제했습니다.'; };
+$('#gemSave').onclick = () => {
+  gem.key = $('#gemKey').value.trim(); gem.model = $('#gemModel').value; store.set('gemModel', gem.model);
+  if ($('#gemRemember').checked) { store.set('gemKey', gem.key); sessionStorage.removeItem('gemKey'); }
+  else { store.set('gemKey', ''); try { sessionStorage.setItem('gemKey', gem.key); } catch {} }
+  $('#gemDlg').close();
+};
+async function callGemini(system, user) {
+  if (!gem.key) { openGemDlg(); throw new Error('Gemini API 키를 먼저 설정하세요.'); }
+  const res = await fetch(`${GEM_BASE}/models/${encodeURIComponent(gem.model)}:generateContent?key=${encodeURIComponent(gem.key)}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: system }] },
+      contents: [{ role: 'user', parts: [{ text: user }] }],
+      generationConfig: { temperature: 0.3, maxOutputTokens: 8192 }
+    })
+  });
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(j.error?.message || `HTTP ${res.status}`);
+  const text = (j.candidates?.[0]?.content?.parts || []).filter(p => !p.thought && p.text).map(p => p.text).join('');
+  if (!text) throw new Error('응답이 비어 있습니다' + (j.candidates?.[0]?.finishReason ? ` (${j.candidates[0].finishReason})` : '') + (j.promptFeedback?.blockReason ? ` (차단: ${j.promptFeedback.blockReason})` : ''));
+  return text;
+}
+// AI에 넘기는 사실 데이터 (개인 식별·카드 정보 제외)
+function buildFacts() {
+  const A = state.anom, sum = a => a.reduce((s, r) => s + r.amount, 0), DOW = '일월화수목금토';
+  const L = A.list, near = L.filter(r => r.near), loc = L.filter(r => r.pos);
+  const biz = new Map(); L.forEach(r => biz.set(r.biz, (biz.get(r.biz) || 0) + r.amount));
+  return {
+    분석대상자: [...new Set(L.map(r => r.user).filter(Boolean))].join(', ') || '미상',
+    분석기간: `${$('#dFrom').value} ~ ${$('#dTo').value}`,
+    위치분석여부: A.geo ? `실행됨 (집 기준 반경 ${state.radius}m)` : '미실행 (집근처 관련 규칙은 판단 불가)',
+    전체: { 건수: L.length, 금액: sum(L) },
+    집근처: A.geo ? { 건수: near.length, 금액: sum(near), 위치확인건대비_금액비중: sum(loc) ? +(sum(near) / sum(loc) * 100).toFixed(1) + '%' : 'N/A' } : '미실행',
+    업종별_금액_상위: [...biz].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, v]) => ({ 업종: k, 금액: v })),
+    이상징후_규칙별: A.rules.map(x => ({ 규칙: x.name, 위험도: SEV[x.sev].label, 기준: x.desc, 건수: x.needGeo ? '판단불가(위치분석 필요)' : x.rows.length, 금액: sum(x.rows) })),
+    이상징후_해당거래: { 건수: A.scored.length, 금액: sum(A.scored) },
+    위험점수_상위거래: A.scored.slice(0, 25).map(r => ({
+      일자: `${ymd(r.date)}(${DOW[r.date.getDay()]})`, 시간: r.time.slice(0, 5), 가맹점: r.merchant, 업종: r.biz, 금액: r.amount,
+      집에서거리m: r.dist != null ? Math.round(r.dist) : null, 위험점수: r.score, 사유: A.reasons.get(r.id).map(x => x.name)
+    }))
+  };
+}
+const SYS = `너는 기업 내부감사팀의 시니어 감사인이다. 법인카드 사용 데이터 분석 결과를 한국어로 정리한다.
+규칙: (1) 제공된 JSON에 있는 숫자와 사실만 사용하고, 새로운 숫자를 계산하거나 지어내지 않는다. 금액은 '원' 단위에 천 단위 쉼표, 큰 금액은 '만원'으로 써도 된다.
+(2) 부정이나 사적 사용을 단정하지 않는다. '소명 필요', '확인 필요', '가능성' 수준으로 표현한다.
+(3) 위치 분석이 미실행이면 집근처 관련 판단은 하지 말고 그 한계를 한 줄로 밝힌다.
+(4) 출력은 Markdown만 사용하고, 문서 제목(#)은 쓰지 않는다.`;
+function needData() { if (!state.anom) { alert('먼저 사용내역 데이터를 불러오세요.'); return true; } return false; }
+async function aiSummary() {
+  if (needData()) return;
+  const box = $('#aiSum'), btn = $('#btnAiSum');
+  box.hidden = false; box.innerHTML = '<span class="spin"></span>Gemini가 이상징후를 요약하는 중…'; btn.disabled = true;
+  try {
+    const t = await callGemini(SYS, `다음 탐지 결과를 감사 담당자가 30초 안에 파악할 수 있게 요약하라.
+형식: 첫 줄에 **한 문장 총평**, 이어서 핵심 이상징후 3~5개 bullet(각 bullet에 건수·금액·대표 거래 1개), 마지막 줄에 '우선 확인 대상:' 한 줄.
+데이터(JSON):
+${JSON.stringify(buildFacts(), null, 1)}`);
+    box.innerHTML = `<div class="h">✦ AI 요약 · ${esc(gem.model)} · ${new Date().toLocaleString('ko-KR')}</div>` + md(t);
+  } catch (e) { box.innerHTML = `<span style="color:var(--near)">요약 실패: ${esc(e.message)}</span>`; }
+  btn.disabled = false;
+}
+$('#btnAiSum').onclick = aiSummary;
+
+// ---------- 경영진 보고서 ----------
+let reportReady = false;
+async function makeReport() {
+  if (needData()) return;
+  const btn = $('#btnReport'), rep = $('#report'), facts = buildFacts();
+  btn.disabled = true; rep.innerHTML = '<span class="spin"></span>Gemini가 경영진 보고서를 작성하는 중… (10~40초)';
+  try {
+    const t = await callGemini(SYS, `다음 데이터로 경영진(CEO·CFO) 보고용 '법인카드 사용 이상징후 점검 보고서' 본문을 작성하라. 경영진은 바쁘므로 간결하고 결론부터 쓴다.
+다음 섹션을 이 순서와 제목 그대로 쓴다:
+## 1. 핵심 요약
+(3줄 이내. 종합 위험도를 '높음/중간/낮음' 중 하나로 첫 줄에 명시)
+## 2. 주요 이상징후
+(위험도 높은 순, 항목별로 건수·금액·의미)
+## 3. 위험도 평가
+(표: | 구분 | 위험도 | 근거 |)
+## 4. 소명 요청 대상 거래
+(위험점수 상위 거래 중 최대 10건 표: | 일자 | 가맹점 | 업종 | 금액 | 사유 |)
+## 5. 권고 조치
+(번호 목록 3~5개. 즉시 조치와 제도 개선을 구분)
+데이터(JSON):
+${JSON.stringify(facts, null, 1)}`);
+    const sum = a => a.reduce((s, r) => s + r.amount, 0), A = state.anom;
+    const hi = A.scored.filter(r => A.reasons.get(r.id).some(x => x.sev === 'high'));
+    rep.innerHTML = `<div class="rh"><h1>법인카드 사용 이상징후 점검 보고서</h1>
+      <div class="meta">대상자 ${esc(facts.분석대상자)} · 분석기간 ${esc(facts.분석기간)} · 작성일 ${ymd(new Date())} · ${A.geo ? `집 반경 ${state.radius >= 1000 ? state.radius / 1000 + 'km' : state.radius + 'm'} 기준` : '위치 분석 미실행'}</div></div>
+      <table class="kt"><tr>
+        <td class="k">총 사용</td><td>${facts.전체.건수}건 · ${won(facts.전체.금액)}</td>
+        <td class="k">집근처 사용</td><td>${A.geo ? `${facts.집근처.건수}건 · ${won(facts.집근처.금액)} (${facts.집근처.위치확인건대비_금액비중})` : '–'}</td></tr><tr>
+        <td class="k">이상징후 해당</td><td>${A.scored.length}건 · ${won(sum(A.scored))}</td>
+        <td class="k">위험 ‘높음’</td><td>${hi.length}건 · ${won(sum(hi))}</td></tr></table>
+      <div class="md">${md(t)}</div>
+      <div class="foot">수치는 시스템이 규칙 기반으로 집계한 값이며, 서술은 Google Gemini(${esc(gem.model)})가 생성한 초안입니다. 최종 판단 전 담당자 검토가 필요합니다.</div>`;
+    reportReady = true;
+  } catch (e) { rep.innerHTML = `<span style="color:var(--near)">보고서 생성 실패: ${esc(e.message)}</span>`; reportReady = false; }
+  ['#btnPrint', '#btnCopy', '#btnHtml'].forEach(s => $(s).disabled = !reportReady);
+  btn.disabled = false;
+}
+const REPORT_CSS = `body{font:13px/1.6 "Noto Sans KR","Malgun Gothic",sans-serif;color:#111;max-width:820px;margin:32px auto;padding:0 24px}
+h1{font-size:21px;margin:0 0 4px}h2{font-size:15px;margin:20px 0 6px;padding-bottom:4px;border-bottom:1px solid #ccc}h3{font-size:14px}
+.rh{border-bottom:2px solid #111;padding-bottom:10px;margin-bottom:14px}.meta{font-size:12px;color:#555}
+table{border-collapse:collapse;width:100%;margin:8px 0;font-size:12px}td,th{border:1px solid #ccc;padding:6px 8px;text-align:left;vertical-align:top}
+th{background:#f0efec}.kt td.k{background:#f0efec;color:#555;width:18%}.foot{margin-top:18px;font-size:11px;color:#888;border-top:1px solid #ddd;padding-top:8px}
+@media print{body{margin:0}@page{margin:16mm}}`;
+const reportDoc = () => `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>법인카드 이상징후 점검 보고서</title><style>${REPORT_CSS}</style></head><body>${$('#report').innerHTML}</body></html>`;
+$('#btnReport').onclick = makeReport;
+$('#btnPrint').onclick = () => {
+  const w = window.open('', '_blank'); if (!w) return alert('팝업이 차단되었습니다. 팝업을 허용해 주세요.');
+  w.document.write(reportDoc()); w.document.close(); w.focus(); setTimeout(() => w.print(), 300);
+};
+$('#btnHtml').onclick = () => {
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([reportDoc()], { type: 'text/html' }));
+  a.download = `법인카드_이상징후_보고서_${ymd(new Date())}.html`; a.click();
+};
+$('#btnCopy').onclick = async () => {
+  const el = $('#report');
+  try { await navigator.clipboard.write([new ClipboardItem({ 'text/html': new Blob([`<style>${REPORT_CSS}</style>` + el.innerHTML], { type: 'text/html' }), 'text/plain': new Blob([el.innerText], { type: 'text/plain' }) })]); }
+  catch { await navigator.clipboard.writeText(el.innerText); }
+  $('#btnCopy').textContent = '복사됨 ✓'; setTimeout(() => $('#btnCopy').textContent = '복사', 1500);
+};
+
+// 간단한 Markdown → HTML (제목·목록·표·굵게)
+function md(src) {
+  const inline = s => esc(s).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/`(.+?)`/g, '<code>$1</code>');
+  const lines = src.replace(/\r/g, '').split('\n'); let html = '', list = null, i = 0;
+  const close = () => { if (list) { html += `</${list}>`; list = null; } };
+  while (i < lines.length) {
+    const l = lines[i].trimEnd(), t = l.trim();
+    if (/^\|.*\|$/.test(t)) {
+      close(); const rows = [];
+      while (i < lines.length && /^\|.*\|$/.test(lines[i].trim())) { rows.push(lines[i].trim()); i++; }
+      const cells = r => r.slice(1, -1).split('|').map(c => c.trim());
+      const body = rows.filter(r => !/^\|[\s:|-]+\|$/.test(r));
+      html += '<table><thead><tr>' + cells(body[0]).map(c => `<th>${inline(c)}</th>`).join('') + '</tr></thead><tbody>'
+        + body.slice(1).map(r => '<tr>' + cells(r).map(c => `<td>${inline(c)}</td>`).join('') + '</tr>').join('') + '</tbody></table>';
+      continue;
+    }
+    let m;
+    if ((m = t.match(/^(#{1,4})\s+(.*)/))) { close(); const n = Math.min(Math.max(m[1].length, 2), 3); html += `<h${n}>${inline(m[2])}</h${n}>`; }
+    else if ((m = t.match(/^[-*•]\s+(.*)/))) { if (list !== 'ul') { close(); html += '<ul>'; list = 'ul'; } html += `<li>${inline(m[1])}</li>`; }
+    else if ((m = t.match(/^\d+[.)]\s+(.*)/))) { if (list !== 'ol') { close(); html += '<ol>'; list = 'ol'; } html += `<li>${inline(m[1])}</li>`; }
+    else if (!t) close();
+    else { close(); html += `<p>${inline(t)}</p>`; }
+    i++;
+  }
+  close(); return html;
+}
+
+// ---------- 시작 ----------
+renderRadius();
+if (state.home) { $('#homeAddr').value = state.home.addr; $('#homeStatus').textContent = `✓ 집 위치: ${state.home.addr}`; }
+if (window.SAMPLE_DATA) loadRows(window.SAMPLE_DATA, '샘플 데이터'); else { $('#btnSample').hidden = true; renderAll(); }
+if (location.protocol === 'file:') $('#mapEmpty').innerHTML = '카카오 지도는 등록된 도메인에서만 열립니다.<br><b>start.bat</b>을 실행한 뒤 <b>http://localhost:8080</b> 으로 접속하세요.';
+else if (kakaoKey()) initMap();
+})();
+</script>
+</body>
+</html>
